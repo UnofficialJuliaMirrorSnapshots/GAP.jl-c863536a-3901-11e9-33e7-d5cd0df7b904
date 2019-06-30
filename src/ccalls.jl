@@ -2,12 +2,16 @@
 
 import Base: getproperty, propertynames
 
-function GET_FROM_GAP(ptr::Ptr{Cvoid})::Any
+function RAW_GAP_TO_JULIA(ptr::Ptr{Cvoid})::Any
     return ccall(:julia_gap,Any,(Ptr{Cvoid},),ptr)
 end
 
+function RAW_JULIA_TO_GAP(val::Any)::Ptr{Cvoid}
+    return ccall(:gap_julia,Ptr{Cvoid},(Any,),val)
+end
+
 function EvalStringEx( cmd :: String )
-    res = ccall( :GAP_EvalString, MPtr, 
+    res = ccall( :GAP_EvalString, Any, 
                  (Ptr{UInt8},),
                  cmd );
     return res
@@ -21,7 +25,7 @@ end
 function ValueGlobalVariable( name :: String )
     gvar = ccall( :GAP_ValueGlobalVariable, Ptr{Cvoid},
                       (Ptr{UInt8},),name)
-    return GET_FROM_GAP(gvar)
+    return RAW_GAP_TO_JULIA(gvar)
 end
 
 function CanAssignGlobalVariable(name::String)
@@ -29,34 +33,35 @@ function CanAssignGlobalVariable(name::String)
              (Ptr{UInt8},), name)
 end
 
-function AssignGlobalVariable(name::String, value::MPtr)
+function AssignGlobalVariable(name::String, value::Any)
     if ! CanAssignGlobalVariable(name)
         error("cannot assing to $name in GAP")
     end
+    tmp = RAW_JULIA_TO_GAP(value)
     ccall(:GAP_AssignGlobalVariable, Cvoid,
-             (Ptr{UInt8}, MPtr), name, value)
+             (Ptr{UInt8}, Ptr{Cvoid}), name, tmp)
 end
 
-function MakeString( val::String )::MPtr
-    string = ccall( :GAP_MakeString, MPtr,
+function MakeString( val::String )::GapObj
+    string = ccall( :GAP_MakeString, Any,
                     ( Ptr{UInt8}, ),
                     val )
     return string
 end
 
-function CSTR_STRING( val::MPtr )::String
+function CSTR_STRING( val::GapObj )::String
     char_ptr = ccall( :GAP_CSTR_STRING, Ptr{UInt8},
-                      ( MPtr, ),
+                      ( Any, ),
                       val )
     return deepcopy(unsafe_string(char_ptr))
 end
 
-function UNSAFE_CSTR_STRING( val::MPtr )::Array{UInt8,1}
+function UNSAFE_CSTR_STRING( val::GapObj )::Array{UInt8,1}
     string_len = Int64( ccall( :GAP_LenString, Cuint,
-                               ( MPtr, ),
+                               ( Any, ),
                                val ) )
     char_ptr = ccall( :GAP_CSTR_STRING, Ptr{UInt8},
-                      ( MPtr, ),
+                      ( Any, ),
                       val )
     return unsafe_wrap( Array{UInt8,1}, char_ptr, string_len )
 end
@@ -64,7 +69,7 @@ end
 
 function NewPlist(length :: Int64)
     o = ccall( :GAP_NewPlist,
-               MPtr,
+               Any,
                (Int64,),
                length )
     return o
@@ -75,59 +80,62 @@ function MakeObjInt(x::BigInt)
                Ptr{Cvoid},
                (Ptr{UInt64},Cint),
                x.d, x.size )
-    return GET_FROM_GAP( o )
+    return RAW_GAP_TO_JULIA( o )
 end
 
 function NEW_MACFLOAT(x::Float64)
     o = ccall( :NEW_MACFLOAT,
-               MPtr,
+               Any,
                (Cdouble,),
                x )
     return o
 end
 
-function ValueMacFloat(x::MPtr)
+function ValueMacFloat(x::GapObj)
     o = ccall( :GAP_ValueMacFloat,
                Cdouble,
-               (MPtr,),
+               (Any,),
                x )
     return o
 end
 
 function CharWithValue(x::Cuchar)
     o = ccall( :GAP_CharWithValue,
-               MPtr,
+               Any,
                (Cuchar,),
                x )
     return o
 end
 
-function ElmList(x::MPtr,position)
+function ElmList(x::GapObj,position)
     o = ccall( :GAP_ElmList,
                Ptr{Cvoid},
-               (MPtr,Culong),
+               (Any,Culong),
                x,Culong(position))
-    return GET_FROM_GAP(o)
+    return RAW_GAP_TO_JULIA(o)
 end
 
 function NewJuliaFunc(x::Function)
     o = ccall( :NewJuliaFunc,
-               MPtr,
+               Any,
                (Any,),
                x )
     return o
 end
 
 """
-    (func::MPtr)(args...)
+    (func::GapObj)(args...)
 
-> This function makes it possible to call MPtr objects as functions.
+> This function makes it possible to call GapObjs as functions.
 > There is no argument number checking here, all checks on the arguments
 > are done by GAP itself.
 """
-(func::MPtr)(args...; kwargs...) = call_gap_func(func, args...; kwargs...)
+# # The (func::GapObj) function (commented out below) needs to be instantiated for `MPtr` 
+# # and is therefore moved to the init function
+# (func::GapObj)(args...; kwargs...) where T <: GapObj = call_gap_func(func, args...; kwargs...)
 
-function call_gap_func(func::MPtr, args...; kwargs...)
+
+function call_gap_func(func::GapObj, args...; kwargs...)
     global Globals
     options = false
     if length(kwargs) > 0
@@ -138,7 +146,7 @@ function call_gap_func(func::MPtr, args...; kwargs...)
     end
     result = nothing
     try
-        result = ccall(:call_gap_func, Any, (MPtr, Any), func, args)
+        result = ccall(:call_gap_func, Any, (Any, Any), func, args)
     catch e
         if options
             Globals.ResetOptionsStack()
@@ -168,7 +176,7 @@ function getproperty(funcobj::GlobalsType, name::Symbol)
     end
 
     v = ccall(:ValGVar, Ptr{Cvoid}, (Cuint,), gvar)
-    v = GET_FROM_GAP(v)
+    v = RAW_GAP_TO_JULIA(v)
     if v == nothing
         error("GAP variable ", name, " not bound")
     end
@@ -180,7 +188,3 @@ function propertynames(funcobj::GlobalsType,private)
     list_converted = gap_to_julia( Array{Symbol,1}, list )
     return tuple(list_converted...)
 end
-
-# For backwards compatibility
-# TODO: remove this again
-GAPFuncs = Globals

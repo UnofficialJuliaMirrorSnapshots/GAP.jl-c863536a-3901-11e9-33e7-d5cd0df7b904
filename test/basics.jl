@@ -15,10 +15,6 @@
     @test x[1] == 1
     @test length(x) == 1
 
-    @test GAP.True
-    @test ! GAP.False
-
-
     xx = GAP.julia_to_gap([1,2,3])
     @test_throws ErrorException xx[4]
 
@@ -26,6 +22,18 @@
 
     str = GAP.gap_to_julia(AbstractString, GAP.ValueGlobalVariable("IdentifierLetters"));
     @test str == "0123456789@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
+
+    @test GAP.CanAssignGlobalVariable("Read") == false
+    @test GAP.CanAssignGlobalVariable("foobar")
+
+    GAP.AssignGlobalVariable("foobar", 42)
+    @test GAP.ValueGlobalVariable("foobar") == 42
+
+    GAP.AssignGlobalVariable("foobar", false)
+    @test GAP.ValueGlobalVariable("foobar") == false
+
+    GAP.AssignGlobalVariable("foobar", "julia_string")
+    @test GAP.ValueGlobalVariable("foobar") == "julia_string"
 
     @test string(GAP.Globals) == "\"table of global GAP objects\""
 

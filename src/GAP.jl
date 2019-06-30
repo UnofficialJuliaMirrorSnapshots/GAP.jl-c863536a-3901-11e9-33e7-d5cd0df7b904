@@ -17,11 +17,17 @@ import Base: length, convert, finalize
 
 import Libdl
 
+import GAPTypes: GapObj
+
+export GapObj
+
+const Obj = Union{GapObj,FFE,Int64,Bool,Nothing}
+
 sysinfo = missing
 
-read_sysinfo_gap = function(dir::String)
+function read_sysinfo_gap(dir::String)
     d = missing
-    open(dir * "/sysinfo.gap") do file
+    open(joinpath(dir, "sysinfo.gap")) do file
         d = Dict{String,String}()
         for ln in eachline(file)
             if length(ln) == 0 || ln[1] == '#'
@@ -85,8 +91,9 @@ run_it = function(gapdir::String, error_handler_func::Ptr{Nothing})
         error("GAP already initialized")
     end
     sysinfo = read_sysinfo_gap(gapdir)
-    println("Adding path ", gapdir * "/.libs", " to DL_LOAD_PATH")
-    push!( Libdl.DL_LOAD_PATH, gapdir * "/.libs" )
+    gapdir = joinpath(gapdir, ".libs")
+    println("Adding path ", gapdir, " to DL_LOAD_PATH")
+    push!( Libdl.DL_LOAD_PATH, gapdir )
     initialize( [ ""
                        , "-l", sysinfo["GAP_LIB_DIR"]
                        , "-T", "-r", "-A", "--nointeract"
@@ -107,6 +114,21 @@ function __init__()
     if ! isdefined(Main, :__GAPINTERNAL_LOADED_FROM_GAP) || Main.__GAPINTERNAL_LOADED_FROM_GAP != true
         run_it(GAPROOT, error_handler_func)
     end
+
+    ## FIXME: Hack because abstract types cannot be endowed with methods in Julia 1.1.
+    ## With Julia 1.2, this will be possible and this hack could then be replaced with the
+    ## corresponding function call in in ccalls.jl (func::GapObj)(...)
+    MPtr = Base.MainInclude.eval(:(ForeignGAP.MPtr))
+    Base.MainInclude.eval(:(
+        (func::$MPtr)(args...; kwargs...) = GAP.call_gap_func(func, args...; kwargs...)
+    ))
 end
+
+include( "ccalls.jl" )
+include( "gap2.jl" )
+include( "macros.jl" )
+include( "gap_to_julia.jl" )
+include( "julia_to_gap.jl" )
+include( "utils.jl" )
 
 end

@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -e
+set -x
 
 AnyFailures=No
 
@@ -27,7 +28,6 @@ cd ..
 #
 pwd
 julia -e 'using Pkg ; Pkg.test("GAP"; coverage=true)' || AnyFailures=Yes
-cd ..
 
 if [ ${AnyFailures} = Yes ]
 then
